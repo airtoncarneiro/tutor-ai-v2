@@ -1,0 +1,38 @@
+name: tutor-ai-v2
+
+services:
+  postgres:
+    image: postgres:17.6-alpine
+    restart: unless-stopped
+
+    environment:
+      POSTGRES_DB: ${TUTOR_POSTGRES_DB:-tutor}
+      POSTGRES_USER: ${TUTOR_POSTGRES_OWNER_USER:-tutor_owner}
+      POSTGRES_PASSWORD: ${TUTOR_POSTGRES_OWNER_PASSWORD:?Defina TUTOR_POSTGRES_OWNER_PASSWORD no arquivo .env}
+
+      TUTOR_APP_PASSWORD: ${TUTOR_APP_PASSWORD:?Defina TUTOR_APP_PASSWORD no arquivo .env}
+      TUTOR_RUNNER_PASSWORD: ${TUTOR_RUNNER_PASSWORD:?Defina TUTOR_RUNNER_PASSWORD no arquivo .env}
+      TUTOR_EVALUATOR_PASSWORD: ${TUTOR_EVALUATOR_PASSWORD:?Defina TUTOR_EVALUATOR_PASSWORD no arquivo .env}
+
+    ports:
+      - "127.0.0.1:${TUTOR_POSTGRES_PORT:-5432}:5432"
+
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./docker/postgres/init:/docker-entrypoint-initdb.d:ro
+
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"
+        ]
+      interval: 2s
+      timeout: 3s
+      retries: 20
+      start_period: 10s
+
+    stop_grace_period: 10s
+
+volumes:
+  postgres_data:

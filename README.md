@@ -26,6 +26,29 @@ Status: documentação revisada; aplicação ainda não implementada. Todas as t
 
 Cada assunto tem uma fonte normativa indicada acima. Exemplos devem obedecer aos contratos; não são regras alternativas. Alterações que afetem outro documento exigem atualização conjunta. [AGENTS.md](AGENTS.md) orienta o agente implementador.
 
+## Banco local para desenvolvimento
+
+O PostgreSQL pode ser iniciado antecipadamente pelo Compose para que o agente
+encontre o banco disponível durante a implementação:
+
+```bash
+cp .env.example .env
+# edite as senhas do arquivo .env
+docker compose up -d --wait postgres
+```
+
+O arquivo `.env` é ignorado pelo Git. O script
+`docker/postgres/init/01-bootstrap-roles.sh` cria as roles, schemas e permissões
+iniciais exigidos pela arquitetura. Esses scripts são executados pelo PostgreSQL
+somente quando o volume `postgres_data` está vazio; mudanças posteriores no
+bootstrap exigem uma migração explícita ou a recriação deliberada do ambiente
+local.
+
+O agente deve usar as URLs `DATABASE_*_URL` do `.env` conforme a operação:
+estado da aplicação, execução restrita de SQL, avaliação ou administração/migração.
+O usuário da aplicação não deve ser substituído pelo usuário proprietário do
+cluster.
+
 ## Origem
 
 Conversa de referência: `6a9bdf10-1f64-83e9-a95d-b0d61fe5fc7d`, originalmente “Criar tutor adaptativo SQL”. Esta revisão substitui a primeira especificação, que omitiu partes do comportamento aprovado. A política foi consolidada a partir das decisões e trechos recuperados, incluindo versões anteriores completas para checkpoints e retenção. Não é uma transcrição literal integral do último prompt, cujo retorno estava truncado.
