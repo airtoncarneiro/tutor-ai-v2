@@ -1,0 +1,27 @@
+{
+  "schema_version": 2,
+  "exercise_id": "plan_grouping_analysis",
+  "version": 1,
+  "task": {
+    "title": "Interpret a grouping execution plan",
+    "statement": "Read the real PostgreSQL EXPLAIN JSON for the supplied query and explain the aggregate and grouping evidence.",
+    "primary_skill": "query_performance.execution_plan_analysis.node_types",
+    "secondary_skills": [],
+    "difficulty": 2,
+    "response_mode": "EXPLANATION_ONLY",
+    "context_tag": "plan_grouping_analysis",
+    "evidence_kind": "isolated",
+    "expected_evidence": ["Identify the observed aggregate and grouping operations in the real plan."],
+    "hidden_variables": [{"name": "plan_nodes", "purpose": "Require interpretation of observed PostgreSQL plan nodes."}]
+  },
+  "environment": {
+    "engine": "PostgreSQL",
+    "mode": "AUTO_SETUP",
+    "tables": [{"name": "sales", "columns": [{"name": "sale_id", "type": "integer", "nullable": false}, {"name": "customer_id", "type": "integer", "nullable": false}, {"name": "amount", "type": "numeric", "nullable": false}], "primary_key": ["sale_id"], "indexes": []}],
+    "visible_data": {"sales": []},
+    "hidden_data": {"sales": []}
+  },
+  "validation": {"mode": "PLAN_ANALYSIS", "supplied_query": "SELECT customer_id, COUNT(*) AS sale_count FROM sales GROUP BY customer_id", "rubric": [{"id": "aggregate_node", "criterion": "Identifies the aggregate and grouping evidence in the observed plan.", "required": true, "skill_key": "query_performance.execution_plan_analysis.node_types"}]},
+  "pedagogy": {"max_hint_level": 3, "allow_solution_reveal": true},
+  "private": {"reference_sql": "SELECT customer_id, COUNT(*) AS sale_count FROM sales GROUP BY customer_id", "reference_explanation": "The plan should show a scan and an aggregate operation that produces groups by customer_id.", "hints": ["Focus on the node types rather than an estimated runtime claim.", "Find the aggregate node and the grouping evidence in its details.", "Use the observed JSON plan as evidence for your explanation."], "solution_explanation": "Explain only what the real EXPLAIN JSON demonstrates; cost estimates are not measured execution time."}
+}

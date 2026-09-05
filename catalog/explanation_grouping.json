@@ -1,0 +1,28 @@
+{
+  "schema_version": 2,
+  "exercise_id": "explain_grouping",
+  "version": 1,
+  "task": {
+    "title": "Explain grouping granularity",
+    "statement": "Explain why the grouping key determines the number of result rows.",
+    "primary_skill": "aggregation.grouping.group_by",
+    "secondary_skills": [],
+    "difficulty": 1,
+    "response_mode": "EXPLANATION_ONLY",
+    "context_tag": "explanation_grouping",
+    "evidence_kind": "isolated",
+    "expected_evidence": ["Connect the grouping key to result granularity."],
+    "hidden_variables": [{"name": "none", "purpose": "No hidden execution data is needed."}]
+  },
+  "environment": null,
+  "validation": {
+    "mode": "EXPLANATION",
+    "rubric": [{"id": "granularity", "criterion": "Connects GROUP BY keys to one output group per key.", "required": true, "skill_key": "aggregation.grouping.group_by"}]
+  },
+  "pedagogy": {"max_hint_level": 3, "allow_solution_reveal": true},
+  "private": {
+    "hints": ["Name the entity represented by one row.", "Relate each group to one grouping-key value.", "Explain how multiple input rows become one group."],
+    "reference_explanation": "GROUP BY creates one group for each distinct grouping-key value, so the output has one row per group.",
+    "solution_explanation": "The grouping key defines result granularity."
+  }
+}

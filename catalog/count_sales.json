@@ -1,0 +1,27 @@
+{
+  "schema_version": 2,
+  "exercise_id": "count_sales_by_customer",
+  "version": 1,
+  "task": {
+    "title": "Count sales by customer",
+    "statement": "Using GROUP BY and COUNT, return customer_id and sale_count for each customer.",
+    "primary_skill": "aggregation.grouping.group_by",
+    "secondary_skills": ["aggregation.aggregate_functions.count"],
+    "difficulty": 1,
+    "response_mode": "SQL_ONLY",
+    "context_tag": "retail_sales_counts",
+    "evidence_kind": "transfer",
+    "expected_evidence": ["Group sale rows at customer granularity and count rows."],
+    "hidden_variables": [{"name": "repeated_customer", "purpose": "Require counting multiple sales per customer."}]
+  },
+  "environment": {
+    "engine": "PostgreSQL",
+    "mode": "AUTO_SETUP",
+    "tables": [{"name": "sales", "columns": [{"name": "sale_id", "type": "integer", "nullable": false}, {"name": "customer_id", "type": "integer", "nullable": false}, {"name": "amount", "type": "numeric", "nullable": false}], "primary_key": ["sale_id"], "indexes": []}],
+    "visible_data": {"sales": [[1, 101, "500.00"], [2, 101, "300.00"], [3, 205, "900.00"]]},
+    "hidden_data": {"sales": [[1, 7, "10.00"], [2, 7, "20.00"], [3, 8, "40.00"]]}
+  },
+  "validation": {"mode": "RESULT_EQUIVALENCE", "output_columns": [{"name": "customer_id", "type": "integer"}, {"name": "sale_count", "type": "integer"}], "order_sensitive": false, "numeric_tolerance": 0, "constraints": [{"id": "grouped_count", "type": "grouped_aggregate", "function": "count", "argument": "*", "group_by": ["sales.customer_id"], "output_alias": "sale_count"}], "reasoning_rubric": []},
+  "pedagogy": {"max_hint_level": 3, "allow_solution_reveal": true},
+  "private": {"reference_sql": "SELECT customer_id, COUNT(*) AS sale_count FROM sales GROUP BY customer_id", "expected_visible_rows": [[101, 2], [205, 1]], "expected_hidden_rows": [[7, 2], [8, 1]], "hints": ["Think about which entity should occupy one output row.", "The grouping key identifies the customer; count the sale rows inside each group.", "Start with SELECT customer_id and COUNT(*) before grouping."], "solution_explanation": "GROUP BY creates one group per customer; COUNT counts the sale rows in each group."}
+}

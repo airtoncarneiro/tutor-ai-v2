@@ -1,0 +1,27 @@
+{
+  "schema_version": 2,
+  "exercise_id": "sales_row_number_by_customer",
+  "version": 1,
+  "task": {
+    "title": "Rank each sale within its customer",
+    "statement": "Using ROW_NUMBER, return sale_id, customer_id, and row_num for each sale ordered within each customer by sale_id. Return rows ordered by customer_id and sale_id.",
+    "primary_skill": "window_functions.row_number",
+    "secondary_skills": ["window_functions.partition_by"],
+    "difficulty": 2,
+    "response_mode": "SQL_ONLY",
+    "context_tag": "retail_sales_row_number",
+    "evidence_kind": "transfer",
+    "expected_evidence": ["Partition rows by customer and order each partition by sale_id."],
+    "hidden_variables": [{"name": "repeated_customer", "purpose": "Require numbering more than one row in a partition."}]
+  },
+  "environment": {
+    "engine": "PostgreSQL",
+    "mode": "AUTO_SETUP",
+    "tables": [{"name": "sales", "columns": [{"name": "sale_id", "type": "integer", "nullable": false}, {"name": "customer_id", "type": "integer", "nullable": false}, {"name": "amount", "type": "numeric", "nullable": false}], "primary_key": ["sale_id"], "indexes": []}],
+    "visible_data": {"sales": [[1, 101, "500.00"], [2, 101, "300.00"], [3, 205, "900.00"]]},
+    "hidden_data": {"sales": [[1, 7, "10.00"], [2, 7, "20.00"], [3, 8, "40.00"]]}
+  },
+  "validation": {"mode": "RESULT_EQUIVALENCE", "output_columns": [{"name": "sale_id", "type": "integer"}, {"name": "customer_id", "type": "integer"}, {"name": "row_num", "type": "integer"}], "order_sensitive": true, "numeric_tolerance": 0, "constraints": [{"id": "row_number", "type": "window_function", "function": "row_number", "output_alias": "row_num"}], "reasoning_rubric": []},
+  "pedagogy": {"max_hint_level": 3, "allow_solution_reveal": true},
+  "private": {"reference_sql": "SELECT sale_id, customer_id, ROW_NUMBER() OVER (PARTITION BY customer_id ORDER BY sale_id) AS row_num FROM sales ORDER BY customer_id, sale_id", "expected_visible_rows": [[1, 101, 1], [2, 101, 2], [3, 205, 1]], "expected_hidden_rows": [[1, 7, 1], [2, 7, 2], [3, 8, 1]], "hints": ["A window function computes a value across related rows without collapsing them.", "Use PARTITION BY to define each customer's window.", "Number each partition with ROW_NUMBER and order its rows by sale_id."], "solution_explanation": "ROW_NUMBER assigns a sequence inside each customer partition while preserving one output row per sale."}
+}

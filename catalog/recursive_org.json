@@ -1,0 +1,27 @@
+{
+  "schema_version": 2,
+  "exercise_id": "recursive_employee_org",
+  "version": 1,
+  "task": {
+    "title": "Traverse an employee hierarchy",
+    "statement": "Using a recursive CTE, return every employee_id and employee_name from the organization. Return rows ordered by employee_id.",
+    "primary_skill": "recursive_cte.recursive_structure.anchor_member",
+    "secondary_skills": [],
+    "difficulty": 3,
+    "response_mode": "SQL_ONLY",
+    "context_tag": "company_employee_hierarchy",
+    "evidence_kind": "composed",
+    "expected_evidence": ["Use an anchor query and a recursive member to traverse manager relationships."],
+    "hidden_variables": [{"name": "multiple_levels", "purpose": "Require traversal beyond direct reports."}]
+  },
+  "environment": {
+    "engine": "PostgreSQL",
+    "mode": "AUTO_SETUP",
+    "tables": [{"name": "employees", "columns": [{"name": "employee_id", "type": "integer", "nullable": false}, {"name": "manager_id", "type": "integer", "nullable": true}, {"name": "employee_name", "type": "text", "nullable": false}], "primary_key": ["employee_id"], "indexes": []}],
+    "visible_data": {"employees": [[1, null, "Ava"], [2, 1, "Ben"], [3, 2, "Cy"]]},
+    "hidden_data": {"employees": [[10, null, "Uma"], [11, 10, "Vic"], [12, 10, "Wen"], [13, 11, "Xiu"]]}
+  },
+  "validation": {"mode": "RESULT_EQUIVALENCE", "output_columns": [{"name": "employee_id", "type": "integer"}, {"name": "employee_name", "type": "text"}], "order_sensitive": true, "numeric_tolerance": 0, "constraints": [{"id": "recursive_org", "type": "recursive_cte", "cte_name": "org"}], "reasoning_rubric": []},
+  "pedagogy": {"max_hint_level": 3, "allow_solution_reveal": true},
+  "private": {"reference_sql": "WITH RECURSIVE org AS (SELECT employee_id, manager_id, employee_name FROM employees WHERE manager_id IS NULL UNION ALL SELECT e.employee_id, e.manager_id, e.employee_name FROM employees e JOIN org o ON e.manager_id = o.employee_id) SELECT employee_id, employee_name FROM org ORDER BY employee_id", "expected_visible_rows": [[1, "Ava"], [2, "Ben"], [3, "Cy"]], "expected_hidden_rows": [[10, "Uma"], [11, "Vic"], [12, "Wen"], [13, "Xiu"]], "hints": ["A recursive CTE has an anchor member and a recursive member.", "Start with employees who have no manager, then join direct reports.", "Name the CTE org and repeatedly join employees.manager_id to the prior employee_id."], "solution_explanation": "The anchor selects the root employee and the recursive member follows manager relationships until every reachable employee is included."}
+}

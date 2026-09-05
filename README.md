@@ -2,7 +2,7 @@
 
 Especificação de uma aplicação local, single-user, em Python + Streamlit + PostgreSQL. O LLM seleciona cenários pedagógicos e gera exercícios declarativos; a aplicação valida contratos, prepara dados, executa SQL e aplica as regras de estado.
 
-Status: documentação revisada; aplicação ainda não implementada. Todas as tarefas de implementação estão pendentes.
+Status: MVP vertical implementado e validado localmente; funcionalidades avançadas do backlog permanecem pendentes.
 
 ## Invariantes
 
@@ -44,10 +44,57 @@ somente quando o volume `postgres_data` está vazio; mudanças posteriores no
 bootstrap exigem uma migração explícita ou a recriação deliberada do ambiente
 local.
 
+Para configurar e verificar um provedor LLM remoto, consulte
+[docs/llm_setup.md](docs/llm_setup.md).
+
 O agente deve usar as URLs `DATABASE_*_URL` do `.env` conforme a operação:
 estado da aplicação, execução restrita de SQL, avaliação ou administração/migração.
 O usuário da aplicação não deve ser substituído pelo usuário proprietário do
 cluster.
+
+## Executar a aplicação
+
+Com Python 3.12 instalado:
+
+```bash
+python3.12 -m venv .venv
+.venv/bin/pip install -e '.[dev]'
+.venv/bin/python -m sql_tutor
+.venv/bin/streamlit run sql_tutor/app.py
+```
+
+Para reproduzir as versões do ambiente validado, use `.venv/bin/pip install -r
+requirements.lock` e instale o projeto em modo editável separadamente.
+
+Testes automatizados:
+
+```bash
+.venv/bin/pytest
+```
+
+Matriz de segurança contra o PostgreSQL real:
+
+```bash
+PYTHONDONTWRITEBYTECODE=1 .venv/bin/python scripts/security_matrix.py
+```
+
+Smoke adaptativo com base temporária e LLM real:
+
+```bash
+PYTHONDONTWRITEBYTECODE=1 .venv/bin/python scripts/smoke_adaptive.py
+```
+
+O comando `python -m sql_tutor` aplica as migrações idempotentes e prepara o
+fixture declarativo de demonstração. O banco deve estar saudável antes desse
+comando.
+
+O MVP atual cobre configuração, fixture declarativo, provisionamento dos dois
+datasets, execução restrita, comparação determinística, persistência de
+sessão/submissão, política adaptativa, recuperação de operações, os três
+formatos pedagógicos e a interface Run/Submit. O fluxo real de geração,
+provisionamento, execução, avaliação e feedback já foi validado. Permanecem
+como validações finais a matriz completa de segurança e a geração real de um
+segundo cenário adaptativo; veja [verification.md](docs/verification.md).
 
 ## Origem
 
