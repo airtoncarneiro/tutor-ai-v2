@@ -31,8 +31,15 @@ class TutorApplication:
         due = {state.skill_key for state in states if retrieval_due(state.retrieval_due_at)}
         self.policy_decision = choose_next_policy(states, due=due)
         if not self.repo.current_run_exists(self.session_id):
+            initial_mode = self._initial_response_mode_for_goal(goal)
+            self.contract = self.generate_exercise(
+                self._initial_skill_for_goal(goal),
+                difficulty=1,
+                response_mode=initial_mode,
+                evidence_kind="isolated",
+            )
             provision(self.contract, self.settings.database_app_url)
-            _, self.run_id = self.repo.save_contract_and_run(self.session_id, self.contract.model_dump(mode="json"), contract_hash(self.contract))
+            self._save_contract_and_run()
         else:
             with self.repo.connect() as conn:
                 self.run_id = str(conn.execute("SELECT current_run_id FROM tutor_state.learning_sessions WHERE id=%s", (self.session_id,)).fetchone()[0])
@@ -45,6 +52,29 @@ class TutorApplication:
         self.skill_states = self.repo.list_skill_states(self.profile_id)
         self.evidence_events = self.repo.recent_evidence(self.profile_id)
         self.evidence_details = self.repo.evidence_details(self.profile_id)
+
+    @staticmethod
+    def _initial_skill_for_goal(goal: str) -> str:
+        """Choose a bounded seed skill before the first LLM-generated exercise."""
+        normalized = goal.casefold()
+        if "window" in normalized or "janela" in normalized or "row_number" in normalized:
+            return "window_functions.row_number"
+        if "recursive" in normalized or "recurs" in normalized or "cte" in normalized:
+            return "recursive_cte.recursive_structure.anchor_member"
+        if "plan" in normalized or "performance" in normalized or "desempenho" in normalized:
+            return "query_performance.execution_plan_analysis.node_types"
+        if "count" in normalized or "contagem" in normalized:
+            # The MVP catalog starts aggregation at grouping granularity; a
+            # real LLM may refine this seed to COUNT during generation.
+            return "aggregation.grouping.group_by"
+        return "aggregation.grouping.group_by"
+
+    @staticmethod
+    def _initial_response_mode_for_goal(goal: str) -> str:
+        normalized = goal.casefold()
+        if "plan" in normalized or "performance" in normalized or "desempenho" in normalized:
+            return "EXPLANATION_ONLY"
+        return "SQL_ONLY"
 
     def decompose_goal(self, goal: str | None = None) -> dict:
         """Return the bounded official competency graph used by the MVP."""
@@ -266,8 +296,15 @@ class TutorApplication:
         self.learning_goal = goal
         self.contract = self.generate_exercise()
         provision(self.contract, self.settings.database_app_url)
-        _, self.run_id = self.repo.save_contract_and_run(self.session_id, self.contract.model_dump(mode="json"), contract_hash(self.contract))
+        self._save_contract_and_run()
         self.failed_count, self.hint_level = 0, 0
+
+    def _save_contract_and_run(self) -> None:
+        payload = self.contract.model_dump(mode="json")
+        _, self.run_id, persisted_payload, _ = self.repo.save_contract_and_run(self.session_id, payload, contract_hash(self.contract))
+        # The repository may allocate a new immutable version when a provider
+        # reuses an existing logical exercise id with changed content.
+        self.contract = validate_contract(persisted_payload)
 
     def submit_response(self, response: str, reasoning: str | None = None, *, action_id: str | None = None):
         mode = self.contract.task.response_mode.value
@@ -358,4 +395,4 @@ class TutorApplication:
             raise ValueError("The exercise response is stale because the learning session changed.")
         self.contract = candidate
         provision(self.contract, self.settings.database_app_url)
-        _, self.run_id = self.repo.save_contract_and_run(self.session_id, self.contract.model_dump(mode="json"), contract_hash(self.contract))
+        self._save_contract_and_run()

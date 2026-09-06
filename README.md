@@ -47,6 +47,9 @@ local.
 Para configurar e verificar um provedor LLM remoto, consulte
 [docs/llm_setup.md](docs/llm_setup.md).
 
+Para instalar e usar a aplicação sem acompanhar os detalhes de engenharia,
+consulte o [User Guide](docs/userguide.md).
+
 O agente deve usar as URLs `DATABASE_*_URL` do `.env` conforme a operação:
 estado da aplicação, execução restrita de SQL, avaliação ou administração/migração.
 O usuário da aplicação não deve ser substituído pelo usuário proprietário do
@@ -66,11 +69,24 @@ python3.12 -m venv .venv
 Para reproduzir as versões do ambiente validado, use `.venv/bin/pip install -r
 requirements.lock` e instale o projeto em modo editável separadamente.
 
-Testes automatizados:
+Testes determinísticos padrão (incluem AppTest e não usam API LLM):
 
 ```bash
-.venv/bin/pytest
+PYTHONDONTWRITEBYTECODE=1 .venv/bin/pytest -m "not postgres and not browser and not real_llm"
 ```
+
+As camadas que dependem de recursos locais ou externos são executadas
+separadamente:
+
+```bash
+PYTHONDONTWRITEBYTECODE=1 .venv/bin/pytest -m apptest
+RUN_POSTGRES_TESTS=1 PYTHONDONTWRITEBYTECODE=1 .venv/bin/pytest -m postgres
+RUN_BROWSER_E2E=1 PYTHONDONTWRITEBYTECODE=1 .venv/bin/pytest -m browser
+```
+
+O PostgreSQL de teste é descartável e não usa a base de desenvolvimento. A
+camada `browser` está reservada para o item 5. Testes com provedor LLM real são
+opcionais e ficam nos scripts de smoke, nunca na suíte padrão.
 
 Matriz de segurança contra o PostgreSQL real:
 

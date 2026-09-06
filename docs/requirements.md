@@ -29,7 +29,7 @@ Restringir capacidades de execução não remove domínios do core. Quando um pe
 
 ## Requisitos funcionais
 
-- **RF-01 Sessão e objetivo:** informar learning_goal e modo (padrão FOCUSED_LEARNING), declarar conhecimento opcionalmente, consultar perfil antes do primeiro exercício. Mesmo objetivo retoma sessão ativa; troca explícita encerra e abre outra atomicamente.
+- **RF-01 Sessão e objetivo:** sem sessão ativa, solicitar learning_goal e modo (padrão FOCUSED_LEARNING), declarar conhecimento opcionalmente e gerar o primeiro exercício a partir do objetivo. Com sessão ativa, retomar diretamente o exercício salvo; troca explícita encerra e abre outra atomicamente.
 - **RF-02 Adaptação:** aplicar a árvore A–F em tutor_prompt.md. LLM propõe competência/cenário dentro das ações elegíveis; Python valida prioridade, capacidades e evidência. Guardar regra e evidências usadas. Não retestar pré-requisitos confiáveis preventivamente.
 - **RF-03 Geração:** gerar ExerciseContract pelo LLM; validar estrutura, capacidades, semântica e solução de referência; preparar e verificar ambiente antes da apresentação. Falha permite reparo limitado e fallback compatível, nunca publicação de exercício inválido.
 - **RF-04 Exploração:** Run SQL executa o editor atual, exibe preview/erro real e registra sql_run. Não cria submission, não chama o tutor nem altera contadores, confidence, mastery ou evidence_status. Quantidade de explorações nunca constitui penalidade.

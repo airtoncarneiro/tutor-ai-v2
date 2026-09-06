@@ -24,6 +24,12 @@ packages = ["sql_tutor"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q"
+markers = [
+  "apptest: deterministic Streamlit widget and rerun tests",
+  "postgres: disposable PostgreSQL integration tests",
+  "browser: real-browser tests, kept opt-in",
+  "real_llm: paid/provider smoke tests, always opt-in",
+]
 
 [tool.ruff]
 line-length = 100

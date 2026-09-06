@@ -4,5 +4,14 @@
 			"path": "."
 		}
 	],
-	"settings": {}
+	"settings": {
+		"chat.tools.terminal.autoApprove": {
+			".venv/bin/playwright": true,
+			"/^\\.venv/bin/pytest -m \"not smoke_llm\" -q$/": {
+				"approve": true,
+				"matchCommandLine": true
+			},
+			".venv/bin/pytest": true
+		}
+	}
 }

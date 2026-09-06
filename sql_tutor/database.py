@@ -47,6 +47,49 @@ def validate_constraints(sql: str, contract: ExerciseContract) -> dict[str, str]
     statement = parse_one(sql, read="postgres")
     output_select = statement if isinstance(statement, exp.Select) else statement.this if isinstance(getattr(statement, "this", None), exp.Select) else statement.find(exp.Select)
     table_names = {table.name.lower() for table in statement.find_all(exp.Table)}
+
+    declared_columns = {
+        table.name.lower(): {column.name.lower() for column in table.columns}
+        for table in (contract.environment.tables if contract.environment else [])
+    }
+    aliases = {}
+    for table in statement.find_all(exp.Table):
+        base_name = table.name.lower()
+        aliases[base_name] = base_name
+        aliases[table.alias_or_name.lower()] = base_name
+
+    def resolve_column(column: object) -> tuple[str, str] | None:
+        if not isinstance(column, exp.Column):
+            return None
+        column_name = column.name.lower()
+        qualifier = column.table.lower()
+        if qualifier:
+            base_name = aliases.get(qualifier, qualifier)
+            if column_name in declared_columns.get(base_name, set()):
+                return base_name, column_name
+            return None
+
+        candidates = {
+            base_name
+            for base_name in table_names
+            if column_name in declared_columns.get(base_name, set())
+        }
+        return (next(iter(candidates)), column_name) if len(candidates) == 1 else None
+
+    def reference_tuple(reference: str) -> tuple[str, str] | None:
+        table_name, separator, column_name = reference.partition(".")
+        if not separator or not table_name or not column_name:
+            return None
+        return table_name.lower(), column_name.lower()
+
+    def is_inside_window(node: exp.Expression) -> bool:
+        parent = node.parent
+        while parent is not None:
+            if isinstance(parent, exp.Window):
+                return True
+            parent = parent.parent
+        return False
+
     results: dict[str, str] = {}
     for constraint in contract.validation.constraints:
         passed = True
@@ -54,12 +97,32 @@ def validate_constraints(sql: str, contract: ExerciseContract) -> dict[str, str]
             passed = bool(constraint.table and constraint.table.lower() in table_names)
         elif constraint.type == "grouped_aggregate":
             selected = list(output_select.expressions) if output_select else []
-            target = [expr for expr in selected if getattr(expr, "alias", "").lower() == (constraint.output_alias or "").lower()]
-            aggregates = [node for expr in target for node in expr.walk() if isinstance(node, exp.AggFunc) and node.sql_name().lower() == (constraint.function or "").lower() and not node.find(exp.Window)]
+            aggregates = []
+            expected_argument = constraint.argument or ""
+            for expr in selected:
+                for node in expr.walk():
+                    if not isinstance(node, exp.AggFunc) or is_inside_window(node):
+                        continue
+                    if node.sql_name().lower() != (constraint.function or "").lower():
+                        continue
+                    if expected_argument == "*":
+                        argument_matches = isinstance(node.this, exp.Star)
+                    else:
+                        argument_matches = resolve_column(node.this) == reference_tuple(expected_argument)
+                    if argument_matches:
+                        aggregates.append(node)
             group = output_select.args.get("group") if output_select else None
-            group_sql = {item.this.sql(dialect="postgres") for item in (group.expressions if group else [])}
-            expected = {value.split(".")[-1] for value in (constraint.group_by or [])}
-            passed = bool(aggregates) and expected.issubset({value.split(".")[-1] for value in group_sql})
+            actual_group = {
+                resolved
+                for item in (group.expressions if group else [])
+                if (resolved := resolve_column(item)) is not None
+            }
+            expected_group = {
+                reference
+                for value in (constraint.group_by or [])
+                if (reference := reference_tuple(value)) is not None
+            }
+            passed = bool(aggregates) and actual_group == expected_group
         elif constraint.type == "window_function":
             selected = list(output_select.expressions) if output_select else []
             target = [expr for expr in selected if getattr(expr, "alias", "").lower() == (constraint.output_alias or "").lower()]

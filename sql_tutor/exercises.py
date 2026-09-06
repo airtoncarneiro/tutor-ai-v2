@@ -148,8 +148,8 @@ def validate_contract(payload: dict[str, Any]) -> ExerciseContract:
                 table_name, _, column_name = reference.partition(".")
                 if table_name not in tables or (column_name != "*" and column_name not in tables[table_name]):
                     raise ContractError(f"Constraint {constraint.id} references an unknown column: {reference}")
-            if not constraint.group_by or not constraint.output_alias:
-                raise ContractError(f"Constraint {constraint.id} requires group_by and output_alias")
+            if not constraint.group_by:
+                raise ContractError(f"Constraint {constraint.id} requires group_by")
         if constraint.type == "window_function" and not constraint.output_alias:
             raise ContractError(f"Constraint {constraint.id} requires output_alias")
     return contract

@@ -84,7 +84,7 @@ obrigatória; nenhuma tarefa implica commit/deploy automático.
 
 ## T09 — Interface Streamlit
 
-- [x] Objetivo, modo e declaração opcional em en-US; retomada e resumo estão implementados.
+- [x] Sem sessão ativa, solicitar objetivo, modo e declaração opcional em en-US; gerar o primeiro exercício pelo LLM/fallback compatível. Sessão ativa é retomada sem regeneração; resumo está implementado.
 - [x] Enunciado/schema/amostra, editor SQL, justificativa conforme modalidade e plano real.
 - [x] Run SQL e Submit Answer separados, estados busy/erro/sem dados/limite/pending_review.
 - [x] Chat socrático, dicas, revelação autorizada, avanço, skip, salvar rascunho e encerramento.

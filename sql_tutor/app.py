@@ -4,8 +4,7 @@ import uuid
 
 import streamlit as st
 
-from sql_tutor.application import TutorApplication
-from sql_tutor.config import ConfigurationError, Settings
+from sql_tutor import ui_runtime
 
 
 st.set_page_config(page_title="Adaptive SQL Tutor", layout="wide")
@@ -13,16 +12,37 @@ st.title("Adaptive SQL Tutor")
 st.caption("Local single-user learning lab · PostgreSQL-backed · Run SQL is separate from Submit Answer")
 
 try:
-    settings = Settings.from_env(".env")
-    tutor = TutorApplication(settings)
-    requested_goal = st.sidebar.text_input("Learning goal", value="Learn SQL aggregation")
-    requested_mode = st.sidebar.selectbox("Mode", ["FOCUSED_LEARNING", "FOCUSED_ASSESSMENT", "GENERAL_ASSESSMENT"])
-    requested_declaration = st.sidebar.text_area("Knowledge declaration (optional)", height=80)
+    settings = ui_runtime.load_settings(".env")
+    tutor = ui_runtime.create_tutor(settings)
     if settings.llm_base_url and settings.llm_model:
         st.sidebar.caption(f"Tutor model: remote ({settings.llm_model}) · local fallback enabled")
     else:
         st.sidebar.caption("Tutor model: local deterministic fallback")
-    tutor.initialize(requested_goal.strip() or "Learn SQL aggregation", requested_mode, requested_declaration)
+    profile_id = tutor.repo.ensure_profile()
+    active_session = tutor.repo.active_session(profile_id)
+    if active_session is None:
+        st.subheader("Start a learning session")
+        st.write("Tell the tutor what you want to learn. Your first exercise will be generated for that goal.")
+        requested_goal = st.text_input("What do you want to learn?", placeholder="e.g. SQL window functions")
+        requested_mode = st.selectbox("Mode", ["FOCUSED_LEARNING", "FOCUSED_ASSESSMENT", "GENERAL_ASSESSMENT"])
+        requested_declaration = st.text_area("What do you already know? (optional)", height=80)
+        if not st.button("Start learning", type="primary"):
+            st.info("Enter a learning goal to begin.")
+            st.stop()
+        goal = requested_goal.strip()
+        if not goal:
+            st.warning("Enter a learning goal before starting.")
+            st.stop()
+        with st.spinner("Generating your first exercise..."):
+            tutor.initialize(goal, requested_mode, requested_declaration)
+    else:
+        resuming_without_run = not tutor.repo.current_run_exists(str(active_session[0]))
+        if resuming_without_run:
+            with st.spinner("Preparing your first exercise..."):
+                tutor.initialize(active_session[1], active_session[2])
+        else:
+            tutor.initialize(active_session[1], active_session[2])
+        st.sidebar.caption("Active session resumed from the last saved exercise.")
     st.sidebar.subheader("Progress")
     for state in tutor.skill_states:
         st.sidebar.progress(state.mastery_score / 5, text=f"{state.skill_key}: {state.mastery_score}/5")
@@ -55,7 +75,7 @@ else:
     response_text = st.text_area("Answer / explanation", key="answer_text", height=180)
 reasoning = None
 if mode == "SQL_PLUS_REASONING":
-    reasoning = st.text_area("Reasoning (optional)", key="reasoning", height=100)
+    reasoning = st.text_area("Reasoning (required)", key="reasoning", height=100)
 if "hint_level" not in st.session_state:
     st.session_state.hint_level = tutor.hint_level
 if "failed_count" not in st.session_state:

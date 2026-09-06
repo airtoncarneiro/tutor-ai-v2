@@ -201,9 +201,25 @@ class Repository:
             conn.execute("UPDATE tutor_state.operations SET status='pending', updated_at=now() WHERE session_id=%s AND status IN ('pending','running')", (session_id,))
             conn.execute("UPDATE tutor_state.operations SET status='stale', updated_at=now(), error_code='session_closed' WHERE session_id=%s AND status IN ('pending','running') AND EXISTS (SELECT 1 FROM tutor_state.learning_sessions s WHERE s.id=%s AND s.status='closed')", (session_id, session_id))
 
-    def save_contract_and_run(self, session_id: str, contract: dict, content_hash: str) -> tuple[str, str]:
+    @staticmethod
+    def _contract_hash(contract: dict) -> str:
+        canonical = json.dumps(contract, sort_keys=True, separators=(",", ":"))
+        return hashlib.sha256(canonical.encode()).hexdigest()
+
+    def save_contract_and_run(self, session_id: str, contract: dict, content_hash: str) -> tuple[str, str, dict, str]:
         contract_id, run_id = str(uuid.uuid4()), str(uuid.uuid4())
         with self.connect() as conn:
+            # Serialize identity allocation so two concurrent advances cannot
+            # choose the same next version for one logical exercise.
+            conn.execute("SELECT pg_advisory_xact_lock(2147483646)")
+            existing_versions = conn.execute("SELECT version FROM tutor_state.exercise_contracts WHERE exercise_id=%s ORDER BY version DESC", (contract["exercise_id"],)).fetchall()
+            requested_version = int(contract["version"])
+            if existing_versions:
+                highest_version = int(existing_versions[0][0])
+                existing = conn.execute("SELECT id, content_hash FROM tutor_state.exercise_contracts WHERE exercise_id=%s AND version=%s", (contract["exercise_id"], requested_version)).fetchone()
+                if existing is None or existing[1] != content_hash:
+                    contract["version"] = max(requested_version, highest_version + 1)
+                    content_hash = self._contract_hash(contract)
             conn.execute("INSERT INTO tutor_state.exercise_contracts (id, exercise_id, version, contract_json, content_hash, source) VALUES (%s,%s,%s,%s,%s,%s) ON CONFLICT (exercise_id,version) DO NOTHING", (contract_id, contract["exercise_id"], contract["version"], json.dumps(contract), content_hash, "catalog"))
             row = conn.execute("SELECT id, content_hash FROM tutor_state.exercise_contracts WHERE exercise_id=%s AND version=%s", (contract["exercise_id"], contract["version"])).fetchone()
             if row[1] != content_hash:
@@ -211,7 +227,7 @@ class Repository:
             contract_id = str(row[0])
             conn.execute("INSERT INTO tutor_state.exercise_runs (id, session_id, contract_id, dataset_hash, context_tag, evidence_kind) VALUES (%s,%s,%s,%s,%s,%s) ON CONFLICT DO NOTHING", (run_id, session_id, contract_id, content_hash, contract["task"]["context_tag"], contract["task"]["evidence_kind"]))
             conn.execute("UPDATE tutor_state.learning_sessions SET current_run_id=%s, current_focus=%s, revision=revision+1 WHERE id=%s", (run_id, contract["task"]["primary_skill"], session_id))
-            return contract_id, run_id
+            return contract_id, run_id, contract, content_hash
 
     def record_submission(self, session_id: str, run_id: str, sql_text: str | None, evaluation: dict, *, reasoning: str | None = None, hint_level: int = 0, action_id: str | None = None, profile_id: str | None = None, skill_state=None, updated_skill_state=None, skill_key: str | None = None, independent: bool = True) -> str:
         action_id = action_id or str(uuid.uuid4())

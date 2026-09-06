@@ -1,6 +1,6 @@
 # Verificação do MVP
 
-Última verificação: 2026-09-05. Este documento não substitui os critérios de
+Última verificação: 2026-09-06. Este documento não substitui os critérios de
 aceite; registra a fronteira entre comportamento comprovado e trabalho ainda
 necessário.
 
@@ -29,6 +29,9 @@ necessário.
   preview e classificação de erro.
 - Comparação determinística com duplicatas, ordem declarada, `NULL` e
   `Decimal`; referência e constraints são pré-validadas.
+- A constraint de agregado valida função, argumento e agrupamento, mas não
+  obriga alias de saída quando o contrato não o declara; qualificação de tabela
+  continua sendo exigida somente quando necessária para resolver ambiguidade.
 - `Run SQL` não cria submissão nem altera métricas; `Submit Answer` persiste
   operação, avaliação, estado de skill e evidência de forma transacional.
 - Replay do mesmo `action_id` não duplica operação, submissão, evidência ou
@@ -52,9 +55,15 @@ necessário.
 - A tela foi inspecionada no navegador local e confirmou os controles e campos
   principais; o comando direto `streamlit run sql_tutor/app.py` também foi
   reiniciado após a correção dos imports.
-- O `streamlit.testing.v1.AppTest` abriu a aplicação, executou `Run SQL`,
-  confirmou o dataframe e executou `Submit Answer` com feedback, usando
-  PostgreSQL real e o fake LLM determinístico.
+- O `streamlit.testing.v1.AppTest` possui injeção determinística de configuração
+  e aplicação. Cinco cenários cobrem `SQL_ONLY`, `SQL_PLUS_REASONING`,
+  `EXPLANATION_ONLY`, separação Run/Submit, dataframe, comandos da tela e
+  `pending_review`/`Retry Review`, sem PostgreSQL e sem rede.
+- Uma fixture pytest iniciou PostgreSQL 17.6 descartável com as roles reais,
+  aplicou a migration e removeu o contêiner ao final. O cenário confirmou
+  criação e retomada da mesma sessão, persistência de rascunho, Run/Submit
+  separados, avaliação visível/oculta, idempotência, conflito de payload e
+  versionamento imutável de contratos usando `FakeLLM`.
 - Compose usa a convenção escolhida `dataforge-ai-lab`/`SQL_MENTOR_*` e mantém
   compatibilidade com nomes `TUTOR_*` já existentes.
 - Duas aberturas concorrentes foram executadas contra o PostgreSQL real e
@@ -100,6 +109,9 @@ necessário.
 - A UI exibe detalhes de cada evidência recente, incluindo exercício, contexto,
   origem, assistência, SQL/resposta enviada, avaliação e estados da skill antes
   e depois do evento.
+- Sem sessão ativa, a UI solicita o objetivo antes de criar a sessão e gera o
+  primeiro exercício pelo LLM (ou fallback compatível); com sessão ativa,
+  retoma o exercício persistido sem regenerá-lo.
 - Submissões têm rollback conjunto comprovado no PostgreSQL real após falha
   injetada; `Next Exercise` também rejeita resposta LLM tardia quando a revisão
   da sessão mudou.
@@ -109,8 +121,14 @@ necessário.
 ## Comandos e resultados
 
 ```text
-PYTHONDONTWRITEBYTECODE=1 .venv/bin/pytest -q
-29 passed
+PYTHONDONTWRITEBYTECODE=1 .venv/bin/pytest -m "not postgres and not browser and not real_llm" -q
+65 passed
+
+PYTHONDONTWRITEBYTECODE=1 .venv/bin/pytest -m apptest -q
+5 passed
+
+RUN_POSTGRES_TESTS=1 PYTHONDONTWRITEBYTECODE=1 .venv/bin/pytest -m postgres -q
+1 passed
 
 .venv/bin/python -m sql_tutor
 Database initialized.
@@ -122,6 +140,10 @@ ok
 Também foram executados smoke tests no PostgreSQL real para submissão correta,
 idempotência, persistência de evidência, troca de exercício, limites de
 permissão e rollback do preflight.
+
+Os três comandos pytest acima não fizeram chamadas a uma API LLM paga. A suíte
+de navegador/Playwright não foi executada nem ampliada nesta entrega porque
+corresponde ao item 5, explicitamente adiado.
 
 A matriz reproduzível `scripts/security_matrix.py` também foi executada contra o
 PostgreSQL real: ownership de provisionamento do papel `app`, grants/denials
@@ -138,9 +160,8 @@ schemas de exercício durante o provisionamento.
   cenários de longa duração na UI.
 - A normalização de extensões de dialeto e lineage completo de aliases ainda é
   uma capacidade reservada.
-- `EXPLANATION_ONLY` e `PLAN_ANALYSIS` têm contratos, avaliadores e fallbacks
-  catalogados; ainda falta um teste de UI ponta a ponta dedicado para cada
-  modalidade.
+- `EXPLANATION_ONLY` e `SQL_PLUS_REASONING` têm cobertura AppTest; a automação
+  de navegador real para todas as modalidades permanece no item 5.
 - A seleção global e os parâmetros de transição também são cobertos por testes
   determinísticos; a transição real foi validada pelo smoke adaptativo em base
   descartável.

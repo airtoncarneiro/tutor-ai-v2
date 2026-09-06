@@ -8,7 +8,7 @@ Todos os campos abaixo são obrigatórios salvo indicação explícita de null/d
 
 - schema_version: inteiro literal 2.
 - exercise_id: identificador lógico atribuído pelo aplicativo; resposta LLM deve ecoar o valor fornecido.
-- version: inteiro >=1 atribuído pelo aplicativo.
+- version: inteiro >=1 atribuído pelo aplicativo; se o mesmo exercise_id receber conteúdo diferente, o aplicativo aloca uma nova versão e preserva a anterior.
 - task: title/statement em en-US (1..200 / 1..6000 caracteres), primary_skill existente, secondary_skills lista única (0..5), difficulty inteiro 1..5, response_mode enum, context_tag identificador, evidence_kind enum isolated/transfer/composed/delayed_retrieval, expected_evidence lista não vazia de frases testáveis, hidden_variables lista de objetos {name, purpose}.
 - environment: null em EXPLANATION; caso contrário objeto descrito abaixo.
 - validation: união discriminada por mode.
@@ -45,7 +45,7 @@ Provisionamento usa schema fixo controlado pelo aplicativo. Não há mais target
 
 validation:
 - mode: RESULT_EQUIVALENCE.
-- output_columns: lista ordenada não vazia de {name, type}; tipos integer/numeric/text/boolean/date. bigint pertence à família integer; aliases são requisitos publicados.
+- output_columns: lista ordenada não vazia de {name, type}; tipos integer/numeric/text/boolean/date. bigint pertence à família integer. O nome é o rótulo canônico da coluna na posição; alias SQL só é requisito quando o enunciado o publica explicitamente.
 - order_sensitive: bool.
 - numeric_tolerance: literal 0 no MVP. Decimal exato; tolerância não zero é rejeitada até existir comparador específico.
 - constraints: lista de restrições obrigatórias suportadas.
@@ -62,7 +62,7 @@ A query de referência usa nomes lógicos, que o aplicativo qualifica para o sch
 
 ### Comparação
 
-Comparar quantidades e famílias de colunas, aliases declarados e valores em ordem de colunas. integer/numeric são comparáveis por Decimal exato; boolean não é inteiro. Textos/capitalização/espaços são exatos, sem strip/casefold. Datas normalizadas como ISO. NULL equivale somente a NULL.
+Comparar quantidades e famílias de colunas e valores em ordem de colunas. Não exigir um alias de saída específico salvo quando o enunciado o publicar explicitamente. integer/numeric são comparáveis por Decimal exato; boolean não é inteiro. Textos/capitalização/espaços são exatos, sem strip/casefold. Datas normalizadas como ISO. NULL equivale somente a NULL.
 
 order_sensitive=false compara multiconjunto de linhas, preservando multiplicidade; nunca set simples. true compara sequência inteira e o enunciado deve exigir ordenação total, inclusive desempates. Empty vs empty é correto só se os demais checks passarem; geração deve incluir ao menos um resultado não vazio em algum dataset.
 
@@ -77,7 +77,7 @@ Objeto base {id, type, ...campos}, id único. Todas são required; não existe s
 | type | Campos adicionais | Semântica |
 |---|---|---|
 | uses_table | table | Existe referência à tabela autorizada no caminho que alimenta o resultado |
-| grouped_aggregate | function (count/sum/avg/min/max), argument (table.column ou * só count), group_by (lista table.column), output_alias | Saída indicada deriva da agregação declarada, sem OVER, com conjunto exato de chaves de agrupamento |
+| grouped_aggregate | function (count/sum/avg/min/max), argument (table.column ou * só count), group_by (lista table.column), output_alias opcional | Uma expressão de saída deriva da agregação declarada, sem OVER, com conjunto exato de chaves de agrupamento; output_alias não é exigido por padrão |
 | window_function | function (row_number/rank/dense_rank/lag/lead/sum/avg/count/min/max), output_alias | Saída indicada depende dessa função com OVER |
 | recursive_cte | cte_name nullable | Há CTE recursiva autorreferente que alimenta a saída; se nome fornecido, corresponde a ela |
 

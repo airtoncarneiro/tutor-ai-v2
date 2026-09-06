@@ -90,6 +90,28 @@ def test_count_sales_catalog_contract_is_valid_and_structural():
     assert validate_constraints("SELECT customer_id, COUNT(*) AS sale_count FROM sales GROUP BY customer_id", contract) == {"grouped_count": "pass"}
 
 
+def test_grouped_aggregate_does_not_require_a_particular_output_alias():
+    from sql_tutor.database import validate_constraints
+    payload = example_contract().model_dump()
+    payload["validation"]["constraints"][0].pop("output_alias")
+    contract = validate_contract(payload)
+    queries = [
+        "SELECT customer_id, SUM(amount) AS another_name FROM sales GROUP BY customer_id",
+        "SELECT customer_id, SUM(amount) FROM sales GROUP BY customer_id",
+        "SELECT s.customer_id, SUM(s.amount) FROM sales AS s GROUP BY s.customer_id",
+    ]
+    for query in queries:
+        assert validate_constraints(query, contract) == {"grouped_sum": "pass"}
+
+
+def test_grouped_aggregate_validates_function_argument_and_exact_group_keys():
+    from sql_tutor.database import validate_constraints
+    contract = example_contract()
+    assert validate_constraints("SELECT customer_id, AVG(amount) FROM sales GROUP BY customer_id", contract) == {"grouped_sum": "fail"}
+    assert validate_constraints("SELECT customer_id, SUM(sale_id) FROM sales GROUP BY customer_id", contract) == {"grouped_sum": "fail"}
+    assert validate_constraints("SELECT customer_id, SUM(amount) FROM sales GROUP BY customer_id, sale_id", contract) == {"grouped_sum": "fail"}
+
+
 def test_sql_security_blocks_mutation_cte_into_lock_and_multiple_statements():
     from sql_tutor.database import SQLBlocked, validate_sql
     contract = example_contract()
@@ -204,6 +226,68 @@ def test_generation_fallback_matches_skill_mode_and_evidence_kind():
     assert contract.exercise_id == "sales_row_number_by_customer"
     explanation = app.generate_exercise("aggregation.grouping.group_by", response_mode="EXPLANATION_ONLY", evidence_kind="isolated")
     assert explanation.exercise_id == "explain_grouping"
+
+
+def test_contract_hash_changes_when_application_allocates_a_new_version():
+    from sql_tutor.repositories import Repository
+    payload = example_contract().model_dump(mode="json")
+    original_hash = Repository._contract_hash(payload)
+    payload["version"] = 2
+    assert Repository._contract_hash(payload) != original_hash
+
+
+def test_repository_versions_changed_content_without_mutating_immutable_contract():
+    from sql_tutor.repositories import Repository
+    payload = example_contract().model_dump(mode="json")
+    payload["task"]["title"] = "Changed content"
+    candidate = validate_contract(payload)
+    candidate_hash = Repository._contract_hash(payload)
+
+    class Result:
+        def __init__(self, rows):
+            self.rows = rows
+
+        def fetchall(self):
+            return self.rows
+
+        def fetchone(self):
+            return self.rows[0] if self.rows else None
+
+    class Connection:
+        def __init__(self):
+            self.inserted_contract = None
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, traceback):
+            return False
+
+        def execute(self, query, params=None):
+            if query.startswith("SELECT pg_advisory_xact_lock"):
+                return Result([])
+            if query.startswith("SELECT version FROM"):
+                return Result([(1,)])
+            if query.startswith("SELECT id, content_hash") and self.inserted_contract is None:
+                return Result([("old-id", "old-hash")])
+            if query.startswith("INSERT INTO tutor_state.exercise_contracts"):
+                self.inserted_contract = params
+                return Result([])
+            if query.startswith("SELECT id, content_hash"):
+                return Result([(self.inserted_contract[0], self.inserted_contract[4])])
+            return Result([])
+
+    connection = Connection()
+    repository = Repository("postgresql://unused")
+    repository.connect = lambda: connection
+    contract_id, run_id, persisted, persisted_hash = repository.save_contract_and_run("session-id", payload, candidate_hash)
+
+    assert contract_id == str(connection.inserted_contract[0])
+    assert run_id
+    assert persisted["version"] == 2
+    assert persisted_hash == Repository._contract_hash(persisted)
+    assert validate_contract(persisted).task.title == candidate.task.title
+    assert connection.inserted_contract[2] == 2
 
 
 def test_tutor_response_is_bounded_to_declared_concepts_and_hints():
