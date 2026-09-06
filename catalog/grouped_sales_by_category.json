@@ -1,0 +1,47 @@
+{
+  "schema_version": 2,
+  "exercise_id": "sales_by_category_composed",
+  "version": 1,
+  "task": {
+    "title": "Total quantity by product category",
+    "statement": "Using products and sales, return each product category and the total quantity sold in that category. Join the tables by product_id and group the result by category.",
+    "primary_skill": "aggregation.grouping.group_by",
+    "secondary_skills": ["aggregation.aggregate_functions.sum"],
+    "difficulty": 2,
+    "response_mode": "SQL_ONLY",
+    "context_tag": "retail_category_totals",
+    "evidence_kind": "composed",
+    "expected_evidence": ["Join related tables, then aggregate sale quantities at category granularity."],
+    "hidden_variables": [{"name": "additional_category", "purpose": "Require the grouping and join to generalize to unseen categories."}]
+  },
+  "environment": {
+    "engine": "PostgreSQL",
+    "mode": "AUTO_SETUP",
+    "tables": [
+      {"name": "products", "columns": [{"name": "product_id", "type": "integer", "nullable": false}, {"name": "category", "type": "text", "nullable": false}], "primary_key": ["product_id"], "indexes": []},
+      {"name": "sales", "columns": [{"name": "sale_id", "type": "integer", "nullable": false}, {"name": "product_id", "type": "integer", "nullable": false}, {"name": "quantity", "type": "integer", "nullable": false}], "primary_key": ["sale_id"], "indexes": []}
+    ],
+    "visible_data": {"products": [[1, "Electronics"], [2, "Electronics"], [3, "Furniture"]], "sales": [[1, 1, 2], [2, 2, 5], [3, 3, 1]]},
+    "hidden_data": {"products": [[10, "Furniture"], [11, "Stationery"]], "sales": [[10, 10, 4], [11, 11, 6]]}
+  },
+  "validation": {
+    "mode": "RESULT_EQUIVALENCE",
+    "output_columns": [{"name": "category", "type": "text"}, {"name": "total_quantity", "type": "integer"}],
+    "order_sensitive": false,
+    "numeric_tolerance": 0,
+    "constraints": [
+      {"id": "uses_products", "type": "uses_table", "table": "products"},
+      {"id": "uses_sales", "type": "uses_table", "table": "sales"},
+      {"id": "grouped_quantity", "type": "grouped_aggregate", "function": "sum", "argument": "sales.quantity", "group_by": ["products.category"], "output_alias": "total_quantity"}
+    ],
+    "reasoning_rubric": []
+  },
+  "pedagogy": {"max_hint_level": 3, "allow_solution_reveal": true},
+  "private": {
+    "reference_sql": "SELECT p.category, SUM(s.quantity) AS total_quantity FROM products AS p JOIN sales AS s ON s.product_id = p.product_id GROUP BY p.category",
+    "expected_visible_rows": [["Electronics", 7], ["Furniture", 1]],
+    "expected_hidden_rows": [["Furniture", 4], ["Stationery", 6]],
+    "hints": ["Identify the relationship between products and sales.", "Join sales to products before grouping.", "The category is the grouping key and quantity is the value to sum."],
+    "solution_explanation": "The join associates each sale with its product category, and SUM(quantity) calculates the total for each category."
+  }
+}

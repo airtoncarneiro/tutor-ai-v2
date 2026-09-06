@@ -74,9 +74,25 @@ class Environment(StrictModel):
             raise ValueError("datasets must exactly match declared tables")
         for table in self.tables:
             width = len(table.columns)
-            for dataset in (self.visible_data, self.hidden_data):
-                if any(len(row) != width for row in dataset[table.name]):
-                    raise ValueError(f"rows for {table.name} have invalid arity")
+            for dataset_name, dataset in (("visible_data", self.visible_data), ("hidden_data", self.hidden_data)):
+                for row_number, row in enumerate(dataset[table.name]):
+                    if len(row) != width:
+                        raise ValueError(f"{dataset_name}.{table.name} row {row_number} has invalid arity")
+                    for column, value in zip(table.columns, row):
+                        if value is None:
+                            if not column.nullable:
+                                raise ValueError(f"{dataset_name}.{table.name} row {row_number} column {column.name} cannot be null")
+                            continue
+                        valid = {
+                            "integer": isinstance(value, int) and not isinstance(value, bool),
+                            "bigint": isinstance(value, int) and not isinstance(value, bool),
+                            "numeric": isinstance(value, (int, float, str)) and not isinstance(value, bool),
+                            "text": isinstance(value, str),
+                            "boolean": isinstance(value, bool),
+                            "date": isinstance(value, str) and len(value) == 10 and value[4] == "-" and value[7] == "-",
+                        }[column.type]
+                        if not valid:
+                            raise ValueError(f"{dataset_name}.{table.name} row {row_number} column {column.name} must be {column.type}")
         return self
 
 
@@ -87,6 +103,7 @@ class Constraint(StrictModel):
     function: str | None = None
     argument: str | None = None
     group_by: list[str] | None = None
+    group_by_exact: bool = False
     output_alias: str | None = None
     cte_name: str | None = None
 

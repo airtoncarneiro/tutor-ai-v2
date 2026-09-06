@@ -124,7 +124,12 @@ def validate_contract(payload: dict[str, Any]) -> ExerciseContract:
         validate_sql(contract.private.reference_sql, contract)
         constraint_results = validate_constraints(contract.private.reference_sql, contract)
         if "fail" in constraint_results.values():
-            raise ContractError("Reference SQL does not satisfy the declared structural constraints")
+            failed = ", ".join(key for key, value in constraint_results.items() if value == "fail")
+            raise ContractError(
+                "Reference SQL does not satisfy declared structural constraints: "
+                f"{failed}. Use fully qualified table.column references in grouped_aggregate "
+                "group_by/argument; use argument='*' for COUNT(*)"
+            )
     if contract.validation.mode.value in {"EXPLANATION", "PLAN_ANALYSIS"}:
         rubric = contract.validation.rubric or contract.validation.reasoning_rubric
         if not rubric or not any(item.required and item.skill_key == contract.task.primary_skill for item in rubric):

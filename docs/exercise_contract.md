@@ -77,7 +77,7 @@ Objeto base {id, type, ...campos}, id único. Todas são required; não existe s
 | type | Campos adicionais | Semântica |
 |---|---|---|
 | uses_table | table | Existe referência à tabela autorizada no caminho que alimenta o resultado |
-| grouped_aggregate | function (count/sum/avg/min/max), argument (table.column ou * só count), group_by (lista table.column), output_alias opcional | Uma expressão de saída deriva da agregação declarada, sem OVER, com conjunto exato de chaves de agrupamento; output_alias não é exigido por padrão |
+| grouped_aggregate | function (count/sum/avg/min/max), argument (table.column ou * só count), group_by (lista table.column), group_by_exact opcional, output_alias opcional | Uma expressão de saída deriva da agregação declarada, sem OVER, contendo as chaves de agrupamento declaradas; chaves adicionais são aceitas por padrão. Use group_by_exact=true somente quando a igualdade exata for requisito pedagógico; output_alias não é exigido por padrão |
 | window_function | function (row_number/rank/dense_rank/lag/lead/sum/avg/count/min/max), output_alias | Saída indicada depende dessa função com OVER |
 | recursive_cte | cte_name nullable | Há CTE recursiva autorreferente que alimenta a saída; se nome fornecido, corresponde a ela |
 

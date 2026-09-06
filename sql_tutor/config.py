@@ -23,6 +23,18 @@ def _int(name: str, default: int, minimum: int = 1) -> int:
     return parsed
 
 
+def _bool(name: str, default: bool) -> bool:
+    value = os.getenv(name)
+    if value is None:
+        return default
+    normalized = value.strip().lower()
+    if normalized in {"1", "true", "yes", "on"}:
+        return True
+    if normalized in {"0", "false", "no", "off"}:
+        return False
+    raise ConfigurationError(f"{name} must be a boolean")
+
+
 @dataclass(frozen=True)
 class Settings:
     database_app_url: str
@@ -34,6 +46,8 @@ class Settings:
     llm_api_key: str | None
     llm_timeout_seconds: int = 30
     llm_max_attempts: int = 3
+    llm_max_output_tokens: int = 2500
+    llm_reasoning_enabled: bool = False
     sql_timeout_ms: int = 3000
     sql_lock_timeout_ms: int = 1000
     sql_max_chars: int = 20000
@@ -62,6 +76,8 @@ class Settings:
             llm_api_key=os.getenv("LLM_API_KEY") or None,
             llm_timeout_seconds=_int("LLM_TIMEOUT_SECONDS", 30),
             llm_max_attempts=_int("LLM_MAX_ATTEMPTS", 3),
+            llm_max_output_tokens=_int("LLM_MAX_OUTPUT_TOKENS", 2500),
+            llm_reasoning_enabled=_bool("LLM_REASONING_ENABLED", False),
             sql_timeout_ms=_int("SQL_TIMEOUT_MS", 3000),
             sql_lock_timeout_ms=_int("SQL_LOCK_TIMEOUT_MS", 1000),
             sql_max_chars=_int("SQL_MAX_CHARS", 20000),

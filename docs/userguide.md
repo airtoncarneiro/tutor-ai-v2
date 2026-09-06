@@ -112,6 +112,14 @@ automaticamente.
 `Run SQL` e `Submit Answer` têm finalidades diferentes: executar uma consulta
 para explorar não altera o domínio ou a confiança do aluno.
 
+As ações principais aparecem na ordem **Run SQL**, **Submit Answer** e **Hint**.
+Após uma execução, a tela informa o status, a quantidade de linhas e que o
+resultado ainda não foi submetido. O apoio ao aluno fica separado do exercício:
+é possível perguntar ao tutor e avançar progressivamente por **Show Hint**,
+**Show Explanation** e **Show Full Solution**, quando a política autorizar.
+Controles de sessão, como trocar objetivo, salvar rascunho, avançar, pular e
+encerrar, ficam no painel lateral **Session controls**.
+
 ## Verificações opcionais
 
 Suíte determinística padrão, sem PostgreSQL descartável, navegador ou API LLM:

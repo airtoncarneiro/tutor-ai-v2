@@ -9,8 +9,13 @@ from .models import EvaluationResult, ExerciseContract, ExecutionResult, RubricA
 
 
 def _normalize(value: Any) -> Any:
-    if isinstance(value, Decimal):
-        return ("decimal", str(value))
+    # PostgreSQL returns NUMERIC values as Decimal, while provider JSON often
+    # decodes the same expected value as int/float.  Compare numeric values by
+    # value (not by their textual scale) and keep booleans out of that family.
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (Decimal, int, float)):
+        return ("number", Decimal(str(value)))
     return value
 
 

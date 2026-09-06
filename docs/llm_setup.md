@@ -18,6 +18,11 @@ v2 e o preflight PostgreSQL. O fornecedor, o nome do modelo e o mecanismo de
 roteamento ficam a critério da configuração local, desde que o endpoint seja
 compatível com o protocolo documentado.
 
+Para reduzir respostas excessivas durante a geração, a configuração padrão usa
+`LLM_MAX_OUTPUT_TOKENS=2500` e `LLM_REASONING_ENABLED=false`. Os datasets
+`visible_data` e `hidden_data` são independentes; os resultados esperados não
+devem combinar as duas fontes.
+
 Execute o smoke test com PostgreSQL disponível:
 
 ```bash

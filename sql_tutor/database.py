@@ -122,7 +122,11 @@ def validate_constraints(sql: str, contract: ExerciseContract) -> dict[str, str]
                 for value in (constraint.group_by or [])
                 if (reference := reference_tuple(value)) is not None
             }
-            passed = bool(aggregates) and actual_group == expected_group
+            passed = bool(aggregates) and (
+                actual_group == expected_group
+                if constraint.group_by_exact
+                else expected_group.issubset(actual_group)
+            )
         elif constraint.type == "window_function":
             selected = list(output_select.expressions) if output_select else []
             target = [expr for expr in selected if getattr(expr, "alias", "").lower() == (constraint.output_alias or "").lower()]

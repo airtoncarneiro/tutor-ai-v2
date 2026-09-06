@@ -23,7 +23,6 @@ def test_equivalent_grouped_queries_and_aliases_satisfy_the_contract():
     [
         "SELECT customer_id, AVG(amount) FROM sales GROUP BY customer_id",
         "SELECT customer_id, SUM(sale_id) FROM sales GROUP BY customer_id",
-        "SELECT customer_id, SUM(amount) FROM sales GROUP BY customer_id, sale_id",
     ],
 )
 def test_structural_grouping_mismatches_are_reported(query):
@@ -34,6 +33,13 @@ def test_result_comparison_preserves_duplicates_and_nulls():
     assert compare_rows([[1], [1], [None]], [[1], [1], [None]], order_sensitive=False)
     assert not compare_rows([[1], [1]], [[1]], order_sensitive=False)
     assert not compare_rows([[1], [None]], [[None], [1]], order_sensitive=True)
+
+
+def test_result_comparison_accepts_equivalent_numeric_json_values():
+    from decimal import Decimal
+
+    assert compare_rows([[1, Decimal("30.00")]], [[1, 30.0]], order_sensitive=False)
+    assert compare_rows([[1, Decimal("30.00")]], [[1, Decimal("30.0")]], order_sensitive=False)
 
 
 def test_incomplete_results_are_inconclusive_not_incorrect():

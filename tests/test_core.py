@@ -90,6 +90,18 @@ def test_count_sales_catalog_contract_is_valid_and_structural():
     assert validate_constraints("SELECT customer_id, COUNT(*) AS sale_count FROM sales GROUP BY customer_id", contract) == {"grouped_count": "pass"}
 
 
+def test_composed_grouping_catalog_contract_is_valid():
+    import json
+    from pathlib import Path
+    contract = validate_contract(json.loads(Path("catalog/grouped_sales_by_category.json").read_text()))
+    assert contract.task.evidence_kind.value == "composed"
+    from sql_tutor.database import validate_constraints
+    assert validate_constraints(
+        "SELECT p.category, SUM(s.quantity) FROM products p JOIN sales s ON s.product_id = p.product_id GROUP BY p.category",
+        contract,
+    ) == {"uses_products": "pass", "uses_sales": "pass", "grouped_quantity": "pass"}
+
+
 def test_grouped_aggregate_does_not_require_a_particular_output_alias():
     from sql_tutor.database import validate_constraints
     payload = example_contract().model_dump()
@@ -109,7 +121,59 @@ def test_grouped_aggregate_validates_function_argument_and_exact_group_keys():
     contract = example_contract()
     assert validate_constraints("SELECT customer_id, AVG(amount) FROM sales GROUP BY customer_id", contract) == {"grouped_sum": "fail"}
     assert validate_constraints("SELECT customer_id, SUM(sale_id) FROM sales GROUP BY customer_id", contract) == {"grouped_sum": "fail"}
-    assert validate_constraints("SELECT customer_id, SUM(amount) FROM sales GROUP BY customer_id, sale_id", contract) == {"grouped_sum": "fail"}
+    assert validate_constraints("SELECT customer_id, SUM(amount) FROM sales GROUP BY customer_id, sale_id", contract) == {"grouped_sum": "pass"}
+
+    exact_payload = contract.model_dump()
+    exact_payload["validation"]["constraints"][0]["group_by_exact"] = True
+    exact_contract = validate_contract(exact_payload)
+    assert validate_constraints("SELECT customer_id, SUM(amount) FROM sales GROUP BY customer_id, sale_id", exact_contract) == {"grouped_sum": "fail"}
+
+
+def test_grouped_aggregate_accepts_compatible_additional_group_key():
+    from sql_tutor.database import validate_constraints
+    contract = example_contract()
+    query = "SELECT p.product_name, SUM(s.quantity) AS total_quantity FROM products AS p JOIN sales AS s ON p.product_id = s.product_id GROUP BY p.product_id, p.product_name"
+    payload = contract.model_dump()
+    payload["environment"] = {
+        "engine": "PostgreSQL", "mode": "AUTO_SETUP",
+        "tables": [
+            {"name": "products", "columns": [{"name": "product_id", "type": "integer", "nullable": False}, {"name": "product_name", "type": "text", "nullable": False}]},
+            {"name": "sales", "columns": [{"name": "sale_id", "type": "integer", "nullable": False}, {"name": "product_id", "type": "integer", "nullable": False}, {"name": "quantity", "type": "integer", "nullable": False}]},
+        ],
+        "visible_data": {"products": [[1, "A"]], "sales": [[1, 1, 2]]},
+        "hidden_data": {"products": [[1, "A"]], "sales": [[1, 1, 3]]},
+    }
+    payload["validation"]["constraints"] = [{"id": "grouped_total", "type": "grouped_aggregate", "function": "sum", "argument": "sales.quantity", "group_by": ["products.product_name"]}]
+    payload["private"]["reference_sql"] = query
+    payload["private"]["expected_visible_rows"] = [["A", 2]]
+    payload["private"]["expected_hidden_rows"] = [["A", 3]]
+    payload["validation"]["output_columns"] = [{"name": "product_name", "type": "text"}, {"name": "total_quantity", "type": "integer"}]
+    accepted = validate_contract(payload)
+    assert validate_constraints(query, accepted) == {"grouped_total": "pass"}
+
+
+def test_grouped_aggregate_contract_requires_qualified_references_and_star_for_count():
+    import json
+    from pathlib import Path
+    from sql_tutor.exercises import ContractError
+
+    payload = json.loads(Path("catalog/count_sales.json").read_text())
+    payload["validation"]["constraints"][0]["argument"] = "sale_id"
+    payload["validation"]["constraints"][0]["group_by"] = ["customer_id"]
+    try:
+        validate_contract(payload)
+    except ContractError as exc:
+        message = str(exc)
+    else:
+        raise AssertionError("invalid grouped_aggregate references must be rejected")
+    assert "grouped_count" in message
+    assert "unknown column" in message
+
+    payload["validation"]["constraints"][0]["argument"] = "*"
+    payload["validation"]["constraints"][0]["group_by"] = ["sales.customer_id"]
+    contract = validate_contract(payload)
+    from sql_tutor.database import validate_constraints
+    assert validate_constraints("SELECT customer_id, COUNT(*) FROM sales GROUP BY customer_id", contract) == {"grouped_count": "pass"}
 
 
 def test_sql_security_blocks_mutation_cte_into_lock_and_multiple_statements():
@@ -190,6 +254,36 @@ def test_generation_retries_invalid_contract_before_catalog_fallback():
     app = TutorApplication(settings, llm=llm)
     assert app.generate_exercise().exercise_id == "sales_by_customer"
     assert llm.calls == 2
+
+
+def test_provision_failure_uses_validated_catalog_fallback(monkeypatch):
+    from sql_tutor.application import TutorApplication
+    from sql_tutor.config import Settings
+    from sql_tutor.provision import ProvisionError
+
+    settings = Settings("postgresql://x", "postgresql://x", "postgresql://x", None, None, None, None)
+    app = TutorApplication(settings)
+    calls = []
+
+    def provision_once_then_succeed(contract, _url):
+        calls.append(contract.exercise_id)
+        if len(calls) == 1:
+            raise ProvisionError("expected rows mismatch")
+
+    monkeypatch.setattr("sql_tutor.application.provision", provision_once_then_succeed)
+    fallback = app._provision_with_fallback(
+        example_contract(),
+        "aggregation.grouping.group_by",
+        response_mode="SQL_ONLY",
+        evidence_kind="isolated",
+        difficulty=1,
+    )
+
+    assert fallback.exercise_id == example_contract().exercise_id
+    assert calls == [example_contract().exercise_id, fallback.exercise_id]
+    assert app.generation_warning
+    assert len(calls) == 2
+    assert app.generation_warning
 
 
 def test_aging_reduces_confidence_without_erasing_mastery():

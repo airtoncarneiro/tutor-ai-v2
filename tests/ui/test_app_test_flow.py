@@ -38,6 +38,7 @@ def test_sql_only_run_and_submit_are_separate(app_test_factory):
     _button(app, "Run SQL").click().run()
 
     assert len(app.dataframe) == 1
+    assert list(app.dataframe[0].value.columns) == ["customer_id", "total"]
     assert any(call[0] == "run_sql" for call in tutor.calls)
     assert not any(call[0] == "submit_response" for call in tutor.calls)
 
@@ -90,8 +91,10 @@ def test_ui_commands_are_wired_to_distinct_application_methods(app_test_factory)
     _button(app, "Send question").click().run()
     assert "Deterministic chat response." in _messages(app.info)
 
-    _button(app, "Show Solution").click().run()
-    assert "Solution revealed after explicit authorization." in _messages(app.warning)
+    _button(app, "Show Hint").click().run()
+    _button(app, "Show Explanation").click().run()
+    _button(app, "Show Full Solution").click().run()
+    assert any(call[0] == "show_solution" for call in tutor.calls)
 
     _button(app, "Save Draft").click().run()
     _button(app, "Session Summary").click().run()
@@ -104,6 +107,21 @@ def test_ui_commands_are_wired_to_distinct_application_methods(app_test_factory)
 
     called = {call[0] for call in tutor.calls}
     assert {"hint", "chat", "show_solution", "save_draft", "summarize", "next_exercise", "skip", "change_goal", "close"} <= called
+
+
+def test_next_exercise_clears_previous_feedback_and_results(app_test_factory):
+    app, tutor = app_test_factory()
+    app.run()
+    _text_area(app, "SQL Editor").input("SELECT customer_id, SUM(amount) FROM sales GROUP BY customer_id")
+    _button(app, "Submit Answer").click().run()
+    assert "Deterministic tutor feedback." in _messages(app.info)
+
+    _button(app, "Next Exercise").click().run()
+    app.run()
+
+    assert "Deterministic tutor feedback." not in _messages(app.info)
+    assert not app.dataframe
+    assert "Answer feedback" not in [element.value for element in app.subheader]
 
 
 def test_pending_review_can_be_retried_without_real_llm(app_test_factory):

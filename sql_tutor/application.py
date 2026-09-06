@@ -5,7 +5,7 @@ from .database import Database, SQLBlocked
 from .evaluator import evaluate_explanation, evaluate_plan, evaluate_sql, evaluate_rubric
 from .exercises import ContractError, adapt_provider_contract, contract_hash, example_contract, validate_contract
 from .llm import FakeLLM, HTTPChatLLM
-from .provision import provision
+from .provision import ProvisionError, provision
 from .repositories import Repository
 from .policy import apply_attempt, choose_next_policy, retrieval_due
 from .models import EvaluationResult, TutorResponse
@@ -18,7 +18,7 @@ class TutorApplication:
         self.contract = example_contract()
         self.repo = Repository(settings.database_app_url, settings.database_admin_url)
         self.db = Database(settings.database_app_url, settings.database_runner_url, settings.database_evaluator_url, timeout_ms=settings.sql_timeout_ms, lock_timeout_ms=settings.sql_lock_timeout_ms, max_chars=settings.sql_max_chars, row_limit=settings.evaluation_row_limit, byte_limit=settings.result_byte_limit)
-        self.llm = llm or (HTTPChatLLM(settings.llm_base_url, settings.llm_model, settings.llm_api_key, settings.llm_timeout_seconds, settings.llm_max_attempts) if settings.llm_base_url and settings.llm_model else FakeLLM())
+        self.llm = llm or (HTTPChatLLM(settings.llm_base_url, settings.llm_model, settings.llm_api_key, settings.llm_timeout_seconds, settings.llm_max_attempts, max_output_tokens=settings.llm_max_output_tokens, reasoning_enabled=settings.llm_reasoning_enabled) if settings.llm_base_url and settings.llm_model else FakeLLM())
 
     def initialize(self, goal: str = "Learn SQL aggregation", mode: str = "FOCUSED_LEARNING", declaration: str | None = None) -> None:
         self.learning_goal = goal
@@ -38,7 +38,13 @@ class TutorApplication:
                 response_mode=initial_mode,
                 evidence_kind="isolated",
             )
-            provision(self.contract, self.settings.database_app_url)
+            self.contract = self._provision_with_fallback(
+                self.contract,
+                self._initial_skill_for_goal(goal),
+                response_mode=initial_mode,
+                evidence_kind="isolated",
+                difficulty=1,
+            )
             self._save_contract_and_run()
         else:
             with self.repo.connect() as conn:
@@ -52,6 +58,43 @@ class TutorApplication:
         self.skill_states = self.repo.list_skill_states(self.profile_id)
         self.evidence_events = self.repo.recent_evidence(self.profile_id)
         self.evidence_details = self.repo.evidence_details(self.profile_id)
+
+    def _catalog_fallback(self, skill_key: str, *, response_mode: str, evidence_kind: str, difficulty: int):
+        import json
+        from pathlib import Path
+
+        catalog_dir = Path(__file__).resolve().parent.parent / "catalog"
+        for path in sorted(catalog_dir.glob("*.json")):
+            try:
+                candidate = validate_contract(json.loads(path.read_text(encoding="utf-8")))
+            except Exception:
+                continue
+            if (
+                candidate.task.primary_skill == skill_key
+                and candidate.task.response_mode.value == response_mode
+                and candidate.task.evidence_kind.value == evidence_kind
+                and candidate.task.difficulty <= difficulty
+            ):
+                return candidate
+        return None
+
+    def _provision_with_fallback(self, candidate, skill_key: str, *, response_mode: str, evidence_kind: str, difficulty: int):
+        self.generation_warning = None
+        try:
+            provision(candidate, self.settings.database_app_url)
+            return candidate
+        except ProvisionError:
+            fallback = self._catalog_fallback(
+                skill_key,
+                response_mode=response_mode,
+                evidence_kind=evidence_kind,
+                difficulty=difficulty,
+            )
+            if fallback is None:
+                raise
+            provision(fallback, self.settings.database_app_url)
+            self.generation_warning = "The generated exercise failed preflight; a validated local fallback is ready."
+            return fallback
 
     @staticmethod
     def _initial_skill_for_goal(goal: str) -> str:
@@ -134,8 +177,11 @@ class TutorApplication:
                 return contract
             except Exception as exc:
                 if hasattr(exc, "errors"):
-                    locations = [".".join(str(part) for part in item.get("loc", ())) for item in exc.errors()]
-                    errors.extend(locations[:8] or [type(exc).__name__])
+                    details = [
+                        ".".join(str(part) for part in item.get("loc", ())) + ": " + str(item.get("msg", "validation error"))
+                        for item in exc.errors()
+                    ]
+                    errors.extend(details[:8] or [type(exc).__name__])
                 else:
                     errors.append(str(exc)[:160])
         from pathlib import Path
@@ -188,7 +234,15 @@ class TutorApplication:
             was_existing = bool(action_id and self.repo.operation_exists(action_id))
             current = self.repo.get_skill_state(self.profile_id, self.contract.task.primary_skill)
             independent = self.repo.run_attempt_count(self.run_id) == 0
-            updated = apply_attempt(current, correct=evaluation.decision == "correct", assisted=False, independent=independent)
+            evidence_kind = self.contract.task.evidence_kind.value
+            updated = apply_attempt(
+                current,
+                correct=evaluation.decision == "correct",
+                assisted=False,
+                independent=independent,
+                delayed=evidence_kind == "delayed_retrieval",
+                evidence_kind=evidence_kind,
+            )
             should_update = not was_existing and (evaluation.decision == "correct" or evaluation.primary_skill_affected)
             self.repo.record_submission(
                 self.session_id, self.run_id, sql, evaluation.model_dump(mode="json"), action_id=action_id,
@@ -200,7 +254,8 @@ class TutorApplication:
                 reasoning=reasoning,
             )
         self.last_feedback = self._feedback(evaluation)
-        states = self.repo.list_skill_states(self.profile_id)
+        self._refresh_learning_state()
+        states = self.skill_states
         self.policy_decision = choose_next_policy(states, current_focus=self.contract.task.primary_skill, due={state.skill_key for state in states if retrieval_due(state.retrieval_due_at)})
         return visible, evaluation
 
@@ -226,6 +281,14 @@ class TutorApplication:
         if hasattr(self, "session_id"):
             self.repo.record_tutor_message(self.session_id, self.run_id, "tutor", payload["message"], model_id=getattr(self.llm, "model_id", None))
         return payload
+
+    def _refresh_learning_state(self) -> None:
+        """Refresh the in-memory state used by the UI after a submission."""
+        if not hasattr(self, "profile_id"):
+            return
+        self.skill_states = self.repo.list_skill_states(self.profile_id)
+        self.evidence_events = self.repo.recent_evidence(self.profile_id)
+        self.evidence_details = self.repo.evidence_details(self.profile_id)
 
     def hint(self, current_level: int = 0, *, action_id: str | None = None):
         level = min(current_level + 1, self.contract.pedagogy.max_hint_level)
@@ -295,7 +358,13 @@ class TutorApplication:
         self.session_id = self.repo.change_goal(self.profile_id, self.session_id, goal)
         self.learning_goal = goal
         self.contract = self.generate_exercise()
-        provision(self.contract, self.settings.database_app_url)
+        self.contract = self._provision_with_fallback(
+            self.contract,
+            self.contract.task.primary_skill,
+            response_mode=self.contract.task.response_mode.value,
+            evidence_kind=self.contract.task.evidence_kind.value,
+            difficulty=self.contract.task.difficulty,
+        )
         self._save_contract_and_run()
         self.failed_count, self.hint_level = 0, 0
 
@@ -357,8 +426,17 @@ class TutorApplication:
                 evaluation = evaluate_explanation(self.contract, response, rubric)
         current = self.repo.get_skill_state(self.profile_id, self.contract.task.primary_skill)
         independent = self.repo.run_attempt_count(self.run_id) == 0
-        updated = apply_attempt(current, correct=evaluation.decision == "correct", assisted=False, independent=independent)
+        evidence_kind = self.contract.task.evidence_kind.value
+        updated = apply_attempt(
+            current,
+            correct=evaluation.decision == "correct",
+            assisted=False,
+            independent=independent,
+            delayed=evidence_kind == "delayed_retrieval",
+            evidence_kind=evidence_kind,
+        )
         self.repo.finalize_review(self.session_id, self.run_id, str(submission_id), evaluation.model_dump(mode="json"), profile_id=self.profile_id if evaluation.decision == "correct" or evaluation.primary_skill_affected else None, skill_state=current, updated_skill_state=updated, skill_key=self.contract.task.primary_skill, independent=independent)
+        self._refresh_learning_state()
         return evaluation
 
     def _persist_non_sql_response(self, response: str, reasoning: str | None, evaluation: EvaluationResult, action_id: str | None) -> None:
@@ -367,8 +445,17 @@ class TutorApplication:
         current = self.repo.get_skill_state(self.profile_id, self.contract.task.primary_skill)
         should_update = evaluation.decision == "correct" or evaluation.primary_skill_affected
         independent = self.repo.run_attempt_count(self.run_id) == 0
-        updated = apply_attempt(current, correct=evaluation.decision == "correct", assisted=False, independent=independent)
+        evidence_kind = self.contract.task.evidence_kind.value
+        updated = apply_attempt(
+            current,
+            correct=evaluation.decision == "correct",
+            assisted=False,
+            independent=independent,
+            delayed=evidence_kind == "delayed_retrieval",
+            evidence_kind=evidence_kind,
+        )
         self.repo.record_submission(self.session_id, self.run_id, None, evaluation.model_dump(mode="json"), reasoning=response, action_id=action_id, profile_id=self.profile_id if should_update else None, skill_state=current if should_update else None, updated_skill_state=updated if should_update else None, skill_key=self.contract.task.primary_skill if should_update else None, independent=independent)
+        self._refresh_learning_state()
 
     def save_draft(self, sql_text: str, reasoning: str | None = None, *, action_id: str | None = None) -> None:
         self.repo.save_draft(self.session_id, self.run_id, sql_text, reasoning, action_id=action_id)
@@ -389,10 +476,33 @@ class TutorApplication:
         self.policy_decision = decision
         target_skill = decision.skill_key if decision else self.contract.task.primary_skill
         difficulty = min(5, max(1, self.contract.task.difficulty + (1 if decision and decision.rule in {"E2", "E3"} else 0)))
-        evidence_kind = "delayed_retrieval" if decision and decision.rule == "F" else "transfer" if decision and decision.rule in {"D2.1", "E2"} else "isolated"
+        target_state = next((state for state in states if state.skill_key == target_skill), None)
+        needs_composed_evidence = bool(
+            decision
+            and decision.rule == "E2"
+            and target_state
+            and target_state.mastery_score == 3
+            and target_state.evidence_status == "validated"
+            and target_state.confidence == "high"
+            and target_state.successful_attempts >= 2
+        )
+        evidence_kind = (
+            "delayed_retrieval"
+            if decision and decision.rule == "F"
+            else "composed"
+            if needs_composed_evidence
+            else "transfer"
+            if decision and decision.rule in {"D2.1", "E2"}
+            else "isolated"
+        )
         candidate = self.generate_exercise(target_skill, difficulty=difficulty, evidence_kind=evidence_kind)
         if self.session_id != session_id or self.repo.session_revision(session_id) != session_revision:
             raise ValueError("The exercise response is stale because the learning session changed.")
-        self.contract = candidate
-        provision(self.contract, self.settings.database_app_url)
+        self.contract = self._provision_with_fallback(
+            candidate,
+            target_skill,
+            response_mode="SQL_ONLY",
+            evidence_kind=evidence_kind,
+            difficulty=difficulty,
+        )
         self._save_contract_and_run()

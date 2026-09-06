@@ -41,3 +41,23 @@ def test_http_adapter_rejects_malformed_json_after_budget(monkeypatch):
 
     with pytest.raises(ValueError):
         HTTPChatLLM("http://fake", "model", None, 1, 2).complete("chat", {})
+
+
+def test_generation_uses_bounded_output_and_disabled_reasoning_by_default(monkeypatch):
+    calls = []
+    monkeypatch.setattr(
+        httpx,
+        "post",
+        lambda *args, **kwargs: calls.append(kwargs) or _Response(
+            200, {"choices": [{"message": {"content": '{"message":"ok"}'}}]}
+        ),
+    )
+
+    HTTPChatLLM(
+        "https://openrouter.ai/api/v1", "model", None, 1, 1, max_output_tokens=1234
+    ).complete("generate_exercise", {})
+
+    payload = calls[0]["json"]
+    assert payload["max_tokens"] == 1234
+    assert payload["reasoning"] == {"enabled": False}
+    assert "independent datasets, not rows to concatenate" in payload["messages"][0]["content"]

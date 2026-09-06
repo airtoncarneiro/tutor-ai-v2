@@ -50,7 +50,15 @@ def choose_next_policy(skills: list[SkillState], *, eligible: set[str] | None = 
     return choose_policy(selected, retrieval_due=bool(due and selected.skill_key in due))
 
 
-def apply_attempt(skill: SkillState, *, correct: bool, assisted: bool, independent: bool, delayed: bool = False) -> SkillState:
+def apply_attempt(
+    skill: SkillState,
+    *,
+    correct: bool,
+    assisted: bool,
+    independent: bool,
+    delayed: bool = False,
+    evidence_kind: str = "isolated",
+) -> SkillState:
     """Apply the evidence-v1 MVP transition to a copy-like model."""
     state = skill.model_copy(deep=True)
     if independent or assisted:
@@ -70,6 +78,8 @@ def apply_attempt(skill: SkillState, *, correct: bool, assisted: bool, independe
             state.confidence = "high" if state.successful_attempts >= 2 else max(state.confidence, "medium", key=["low", "medium", "high"].index)
             if state.successful_attempts >= 2:
                 state.evidence_status = "validated"
+            if evidence_kind == "composed" and state.successful_attempts >= 3:
+                state.mastery_score = max(state.mastery_score, 4)
             if delayed and state.successful_attempts >= 3 and state.mastery_score >= 4:
                 state.mastery_score = 5
                 state.evidence_status = "mastered"
